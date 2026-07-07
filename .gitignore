@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.env
+.envrc
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# HuggingFace / PyTorch caches (re-downloaded on clone)
+.cache/
+huggingface/
+**/.cache/
+*.pt
+*.pth
+*.ckpt
+
+# Large ML artifacts (anywhere in repo)
+*.npy
+*.npz
+*.faiss
+faiss.index
+doc_embeddings.npy
+
+# --- data/ — всё регенерируется скриптами, в git только структура папок ---
+data/**/*
+!data/**/.gitkeep

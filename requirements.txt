@@ -1,0 +1,17 @@
+# --- Data export (create_test.py, create_corpus.py) ---
+datasets>=2.19.0
+huggingface_hub>=0.23.0
+
+# --- Analytics & quality eval plots ---
+matplotlib>=3.8.0
+numpy>=1.26.0
+scipy>=1.11.0
+
+# --- Vector search (bge-small-en-v1.5 + FAISS) ---
+sentence-transformers>=3.0.0
+transformers>=4.40.0
+torch>=2.2.0
+faiss-cpu>=1.8.0
+
+# --- Utilities ---
+tqdm>=4.66.0
