@@ -6,6 +6,7 @@ model:
   query_prompt: "query: "      # e5 is trained with query:/passage: prefixes on BOTH sides
   doc_prompt: "passage: "
   batch_size: 256
+  fp16: true
   device: cuda
 
 index:
