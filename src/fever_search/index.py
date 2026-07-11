@@ -1,0 +1,78 @@
+"""Build, persist and load a FAISS index (flat / ivf / hnsw) over the corpus."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+import faiss
+import numpy as np
+
+from fever_search import paths
+from fever_search.config import ExperimentConfig, IndexConfig
+from fever_search.data_io import doc_to_passage, iter_jsonl
+from fever_search.encoder import Encoder
+
+
+def build_faiss(embeddings: np.ndarray, cfg: IndexConfig) -> faiss.Index:
+    dim = embeddings.shape[1]
+    if cfg.type == "flat":
+        index = faiss.IndexFlatIP(dim)
+    elif cfg.type == "ivf":
+        quantizer = faiss.IndexFlatIP(dim)
+        index = faiss.IndexIVFFlat(quantizer, dim, cfg.nlist, faiss.METRIC_INNER_PRODUCT)
+        index.train(embeddings)
+        index.nprobe = cfg.nprobe
+    elif cfg.type == "hnsw":
+        index = faiss.IndexHNSWFlat(dim, cfg.hnsw_m, faiss.METRIC_INNER_PRODUCT)
+        index.hnsw.efConstruction = cfg.ef_construction
+        index.hnsw.efSearch = cfg.ef_search
+    else:
+        raise ValueError(f"Unknown index type: {cfg.type!r} (flat | ivf | hnsw)")
+    index.add(embeddings)
+    return index
+
+
+def build_and_save(config: ExperimentConfig, encoder: Encoder | None = None) -> None:
+    if not paths.CORPUS_PATH.exists():
+        raise FileNotFoundError(f"Corpus not found: {paths.CORPUS_PATH}. Run scripts/data/build_corpus.py")
+
+    encoder = encoder or Encoder(config.model)
+    docs = list(iter_jsonl(paths.CORPUS_PATH))
+    doc_ids = [str(doc["_id"]) for doc in docs]
+    passages = [doc_to_passage(doc) for doc in docs]
+
+    embeddings = encoder.encode_documents(passages, show_progress_bar=True)
+    index = build_faiss(embeddings, config.index)
+
+    out_dir = paths.index_dir(config.name)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    faiss.write_index(index, str(out_dir / "faiss.index"))
+    np.save(out_dir / "doc_embeddings.npy", embeddings)
+    (out_dir / "doc_ids.json").write_text(json.dumps(doc_ids), encoding="utf-8")
+
+    manifest = {
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "config_name": config.name,
+        "model_name": config.model.name,
+        "index_type": config.index.type,
+        "document_count": len(doc_ids),
+        "embedding_dim": int(embeddings.shape[1]),
+        "normalize_embeddings": config.model.normalize,
+    }
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    print(f"Index [{config.index.type}]: {len(doc_ids):,} docs, dim {embeddings.shape[1]} -> {out_dir}")
+
+
+def load(name: str) -> tuple[faiss.Index, list[str], dict]:
+    out_dir = paths.index_dir(name)
+    faiss_path = out_dir / "faiss.index"
+    ids_path = out_dir / "doc_ids.json"
+    if not faiss_path.exists() or not ids_path.exists():
+        raise FileNotFoundError(f"Index not found in {out_dir}. Run scripts/build_index.py --config ...")
+    index = faiss.read_index(str(faiss_path))
+    doc_ids = json.loads(ids_path.read_text(encoding="utf-8"))
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    return index, doc_ids, manifest

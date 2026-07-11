@@ -1,0 +1,64 @@
+"""Experiment configuration loaded from a YAML file"""
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from pathlib import Path
+import yaml
+
+
+@dataclass
+class ModelConfig:
+    name: str = "BAAI/bge-small-en-v1.5"
+    normalize: bool = True
+    query_prompt: str | None = "query"
+    doc_prompt: str | None = "document"
+    batch_size: int = 64
+
+
+@dataclass
+class IndexConfig:
+    type: str = "flat"          # flat | ivf | hnsw
+    nlist: int = 4096           # ivf: number of Voronoi cells
+    nprobe: int = 32            # ivf: cells probed at search time
+    hnsw_m: int = 32            # hnsw: neighbours per node
+    ef_construction: int = 200  # hnsw: build-time candidate list
+    ef_search: int = 64         # hnsw: search-time candidate list
+
+
+@dataclass
+class EvalConfig:
+    top_k: int = 100
+    k_values: list[int] = field(default_factory=lambda: [1, 5, 10, 100])
+
+
+@dataclass
+class TrainConfig:
+    base_config: str | None = None
+    epochs: int = 1
+    lr: float = 2e-5
+    batch_size: int = 64
+    warmup_ratio: float = 0.1
+    hard_negatives: int = 4
+    max_train_pairs: int | None = None
+
+
+@dataclass
+class ExperimentConfig:
+    name: str
+    model: ModelConfig = field(default_factory=ModelConfig)
+    index: IndexConfig = field(default_factory=IndexConfig)
+    eval: EvalConfig = field(default_factory=EvalConfig)
+    train: TrainConfig = field(default_factory=TrainConfig)
+
+
+def load_config(path: str | Path) -> ExperimentConfig:
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    if "name" not in data:
+        raise ValueError(f"Config {path} is missing required field 'name'")
+    return ExperimentConfig(
+        name=data["name"],
+        model=ModelConfig(**data.get("model", {})),
+        index=IndexConfig(**data.get("index", {})),
+        eval=EvalConfig(**data.get("eval", {})),
+        train=TrainConfig(**data.get("train", {})),
+    )

@@ -1,129 +1,106 @@
 # FEVER Evidence Search
 
-Векторный поиск доказательств по датасету [BEIR/FEVER](https://huggingface.co/datasets/BeIR/fever): по claim (утверждению) находим релевантные пассажи Wikipedia.
+Векторный поиск доказательств: по claim (утверждению) находим релевантные пассажи Wikipedia. Проект курса **Deep Learning for Search** (Innopolis, 2026).
 
-Проект для курса **Deep Learning for Search** (Innopolis, 2026).
+**Основная задача — [BeIR/fever](https://huggingface.co/datasets/BeIR/fever)** (123 142 claim'а) поверх единого корпуса 500k. [BeIR/climate-fever](https://huggingface.co/datasets/BeIR/climate-fever) (1 535 claim'ов) — дополнительный out-of-domain бенчмарк на **том же** индексе, оценивается отдельно.
 
-## Задача
+Метрики: nDCG@10, Recall@k, MRR. Итерации задаются **конфигами** (модель / тип индекса / дообучение) — по одному YAML на эксперимент.
 
-**Стадия 1 (этот репозиторий):** retrieval — по query найти top-k документов из корпуса.  
-Оценка: nDCG@10, Recall@k, MRR на `qrels_test` (6 666 test claims).
-
-**Стадия 2 (опционально):** NLI-классификатор SUPPORTS / REFUTES / NOT ENOUGH INFO поверх найденных пассажей.
-
-## Структура репозитория
+## Структура
 
 ```
 dls_project/
-├── data/
-│   ├── corpus/           # fever_500k.jsonl (не в git, ~300 MB)
-│   ├── queries/          # queries.jsonl — все claim'ы
-│   ├── qrels/            # qrels_{train,validation,test}.tsv
-│   ├── index/            # эмбеддинги + FAISS (не в git)
-│   ├── index/            # эмбеддинги + FAISS (не в git)
-│   ├── analysis/         # отчёты, графики, hash.md (не в git)
-│   └── quality/          # метрики retrieval (не в git)
-├── scripts/
-│   ├── create_test.py    # выгрузка queries + qrels с HuggingFace
-│   ├── create_corpus.py  # сборка корпуса 500k
-│   ├── analysis.py       # статистика датасета и графики
-│   ├── corpus_vector_bge_small_en_v1.5.py  # индексация корпуса
-│   ├── query_search_bge_small_en_v1.5.py   # API векторного поиска
-│   ├── terminal_test_bge_small_en_v1.5.py  # демо в терминале
-│   └── test_bge_small_en_v1.5.py           # eval на test split
-├── requirements.txt
-└── README.md
+├── configs/                  # 1 YAML = 1 эксперимент
+│   ├── bge_small_flat.yaml   ├── bge_small_ivf.yaml
+│   ├── bge_small_hnsw.yaml   └── bge_small_ft.yaml   # дообученная модель
+├── src/fever_search/         # библиотека
+│   ├── config.py             # dataclass + load_config(yaml)
+│   ├── paths.py              # пути к data/, артефакты по имени конфига
+│   ├── data_io.py            # чтение corpus/queries/qrels
+│   ├── encoder.py            # обёртка SentenceTransformer
+│   ├── index.py              # FAISS build/load: flat | ivf | hnsw
+│   ├── search.py             # SearchEngine
+│   ├── eval.py               # метрики + run_eval
+│   └── train/
+│       ├── mine.py           # hard-negative mining
+│       └── train.py          # MNRL fine-tune
+├── scripts/                  # тонкие CLI (вся логика в пакете)
+│   ├── data/                 # подготовка данных (не config-driven)
+│   │   ├── export_fever.py   ├── export_climate.py
+│   │   ├── build_corpus.py   └── analyze.py
+│   ├── build_index.py    ├── evaluate.py    ├── demo.py
+│   ├── mine_negatives.py └── train.py
+├── data/                     # артефакты, не в git
+├── models/                   # чекпоинты дообучения, не в git
+└── pyproject.toml            # зависимости + пакет (uv)
 ```
+
+## Установка (uv)
+
+```bash
+uv sync                       # создаёт .venv + uv.lock из pyproject.toml
+```
+
+Дальше либо `uv run <cmd>`, либо активировать `.venv`. Скрипты сами добавляют `src/` в путь, установка пакета необязательна.
 
 ## Данные
 
-| Компонент | Источник | Формат |
-|-----------|----------|--------|
-| Corpus | `BeIR/fever` | JSONL: `{_id, title, text}` |
-| Queries | `BeIR/fever` | JSONL: `{_id, title, text}` — claim в `text` |
-| Qrels | `BeIR/fever-qrels` | TSV: `query-id`, `corpus-id`, `score` |
+Формат BeIR: `corpus` / `queries` (`{_id, title, text}`) / `qrels` (TSV `query-id`, `corpus-id`, `score`). Сплит train/validation/test задаётся **только в qrels** (FEVER — все три, climate-fever — только `test`).
 
-Сплит train/validation/test задаётся **только в qrels** (в `queries` одного файла на все 123k claim'ов).
+| Бенчмарк | Корпус | Индекс | Файлы |
+|----------|--------|--------|-------|
+| **FEVER** (основной) | 5.4M Wikipedia → срез 500k | per-config | `data/queries/`, `data/qrels/` |
+| **Climate-FEVER** | тот же Wikipedia | тот же индекс | `data/climate-fever/` |
 
-### Корпус 500k
+**Корпус 500k:** все gold-документы из qrels FEVER (train/val/test) и climate-fever (test) обязательно в индексе (потолок Recall/nDCG = 1.0), остальное — reservoir sampling (seed=42). Собрано 500 000 (15 613 gold + 484 387 filler), FEVER test-gold покрыт 100%; 57 climate-evidence отсутствуют в дампе fever → `data/corpus/missing_gold_ids.txt`.
 
-Срез из 5.42M пассажей:
-
-1. **Все** документы-доказательства из `qrels_test` (~1 499 шт.) — обязательно в индексе.
-2. Остальное — случайная добивка до 500 000 (reservoir sampling, seed=42).
-
-Без gold-документов метрики на test были бы невалидны.
-
-## Быстрый старт
+## Пайплайн
 
 ```bash
-cd dls_project
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-pip install -r requirements.txt
+# 1. данные (один раз)
+python scripts/data/export_fever.py
+python scripts/data/export_climate.py
+python scripts/data/build_corpus.py        # ~5-10 мин
+python scripts/data/analyze.py             # статистика -> data/analysis
+
+# 2. индекс + eval для конфига
+python scripts/build_index.py --config configs/bge_small_flat.yaml
+python scripts/evaluate.py   --config configs/bge_small_flat.yaml --benchmark fever   --split test
+python scripts/evaluate.py   --config configs/bge_small_flat.yaml --benchmark climate --split test
+python scripts/demo.py       --config configs/bge_small_flat.yaml
+
+# 3. дообучение (итерация: hard negatives + MNRL)
+python scripts/mine_negatives.py --config configs/bge_small_ft.yaml   # использует индекс bge_small_flat
+python scripts/train.py          --config configs/bge_small_ft.yaml   # -> models/bge_small_ft
+python scripts/build_index.py    --config configs/bge_small_ft.yaml --model-path models/bge_small_ft
+python scripts/evaluate.py       --config configs/bge_small_ft.yaml --model-path models/bge_small_ft --benchmark fever --split test
 ```
 
-### 1. Выгрузить queries и qrels
+Артефакты ключуются именем конфига: индекс → `data/index/<name>/`, метрики → `data/quality/<name>/<benchmark>/report.json`. Сравнительная таблица итераций собирается из этих `report.json`.
 
-```bash
-python scripts/create_test.py
+## Конфиг
+
+```yaml
+name: bge_small_flat          # имя = ключ артефактов
+model:
+  name: BAAI/bge-small-en-v1.5
+  batch_size: 64
+index:
+  type: flat                  # flat | ivf (nlist/nprobe) | hnsw (hnsw_m/ef_*)
+eval:
+  top_k: 100
+  k_values: [1, 5, 10, 100]
+train:                        # только для train.py
+  base_config: bge_small_flat # индекс для майнинга hard negatives
+  epochs: 1
+  hard_negatives: 4
 ```
 
-Создаёт `data/queries/queries.jsonl` и `data/qrels/qrels_*.tsv`.
+## Git
 
-### 2. Собрать корпус 500k
-
-```bash
-python scripts/create_corpus.py
-```
-
-Создаёт `data/corpus/fever_500k.jsonl` (streaming по полному корпусу, ~5–10 мин).
-
-### 3. Аналитика датасета
-
-```bash
-python scripts/analysis.py
-```
-
-Создаёт `data/analysis/report.json`, `README.md`, `hash.md`, графики в `figures/`.
-
-## Векторный поиск
-
-```bash
-python scripts/corpus_vector_bge_small_en_v1.5.py   # индекс (один раз)
-python scripts/terminal_test_bge_small_en_v1.5.py   # демо в терминале
-python scripts/test_bge_small_en_v1.5.py            # eval → data/quality/
-```
-
-- **Модель:** `BAAI/bge-small-en-v1.5`
-- **Индекс:** FAISS `IndexFlatIP`
-- **Метрики:** Precision@k, Recall@k, MRR, nDCG@10
-
-## Что коммитить в git
-
-| Путь | В git? |
-|------|--------|
-| `scripts/`, `requirements.txt`, `README.md`, `.gitignore` | да |
-| `data/**` | **нет** — только пустые папки (`.gitkeep`) |
-
-После клонирования репозитория:
-
-```bash
-pip install -r requirements.txt
-python scripts/create_test.py      # queries + qrels
-python scripts/create_corpus.py    # corpus 500k
-python scripts/analysis.py         # аналитика
-python scripts/corpus_vector_bge_small_en_v1.5.py
-```
-
-## Команда / защита
-
-- Презентация: до 15 мин + 5 мин вопросы (неделя 7, 15 июля)
-- Нужно: value proposition, архитектура, 2+ итерации (модель / индекс), сравнительная таблица метрик и железа
+В git — `src/`, `scripts/`, `configs/`, `pyproject.toml`, `README.md`, `.gitignore`. Всё под `data/**` и `models/` игнорируется и восстанавливается запуском скриптов.
 
 ## Ссылки
 
-- [BeIR/fever](https://huggingface.co/datasets/BeIR/fever)
-- [BeIR/fever-qrels](https://huggingface.co/datasets/BeIR/fever-qrels)
-- [FAISS](https://github.com/facebookresearch/faiss)
-- [Sentence Transformers](https://www.sbert.net/)
+- [BeIR/fever](https://huggingface.co/datasets/BeIR/fever) · [BeIR/climate-fever](https://huggingface.co/datasets/BeIR/climate-fever)
+- [FAISS](https://github.com/facebookresearch/faiss) · [Sentence Transformers](https://www.sbert.net/)
