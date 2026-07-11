@@ -10,9 +10,10 @@ import yaml
 class ModelConfig:
     name: str = "BAAI/bge-small-en-v1.5"
     normalize: bool = True
-    query_prompt: str | None = "query"
-    doc_prompt: str | None = "document"
+    query_prompt: str | None = None   # literal instruction prepended to queries (model-specific), e.g. "query: "
+    doc_prompt: str | None = None     # literal instruction prepended to documents, e.g. "passage: "
     batch_size: int = 64
+    fp16: bool = False          # load weights in fp16 on cuda (big speed-up on A100, negligible retrieval impact)
     device: str | None = None   # null = auto (sentence-transformers picks cuda > mps > cpu); or "cuda", "cuda:0", "cpu"
 
 

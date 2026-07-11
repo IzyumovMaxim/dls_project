@@ -19,7 +19,10 @@ class Encoder:
                 "device to null/'cpu' in the config to run on CPU on purpose."
             )
         self.model = SentenceTransformer(model_path or config.name, device=config.device)
-        print(f"[Encoder] {model_path or config.name} -> device: {self.model.device}")
+        if config.fp16 and config.device and config.device.startswith("cuda"):
+            self.model = self.model.half()
+        dtype = next(self.model.parameters()).dtype
+        print(f"[Encoder] {model_path or config.name} -> device: {self.model.device}, dtype: {dtype}")
 
     def encode_documents(self, texts: list[str], show_progress_bar: bool = False) -> np.ndarray:
         return self._encode(texts, self.config.doc_prompt, show_progress_bar)
@@ -35,7 +38,7 @@ class Encoder:
             "convert_to_numpy": True,
         }
         if prompt:
-            kwargs["prompt_name"] = prompt
+            kwargs["prompt"] = prompt   # literal instruction text prepended to each input
         vectors = self.model.encode(texts, **kwargs)
         return np.asarray(vectors, dtype=np.float32)
     
