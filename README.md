@@ -69,6 +69,12 @@ python scripts/evaluate.py   --config configs/bge_small_flat.yaml --benchmark fe
 python scripts/evaluate.py   --config configs/bge_small_flat.yaml --benchmark climate --split test
 python scripts/demo.py       --config configs/bge_small_flat.yaml
 
+# 3. сравнить метрики моделей эмбедингов
+python scripts/compare.py
+python scripts/compare.py --benchmark fever
+python scripts/compare.py --metrics ndcg@10,recall@10,mrr --sort-by recall@10
+python scripts/compare.py --out data/quality/comparison.md
+
 # 3. дообучение (итерация: hard negatives + MNRL)
 python scripts/mine_negatives.py --config configs/bge_small_ft.yaml   # использует индекс bge_small_flat
 python scripts/train.py          --config configs/bge_small_ft.yaml   # -> models/bge_small_ft

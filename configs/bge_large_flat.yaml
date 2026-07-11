@@ -1,11 +1,11 @@
-name: bge_small_flat
+name: bge_large_flat
 
 model:
-  name: BAAI/bge-small-en-v1.5
+  name: BAAI/bge-large-en-v1.5
   normalize: true
   query_prompt: query
   doc_prompt: document
-  batch_size: 64
+  batch_size: 32
   device: cuda
 
 index:
