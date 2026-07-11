@@ -1,9 +1,11 @@
+"""Export FEVER queries + qrels (train/validation/test) from HuggingFace."""
+
 import json
 from pathlib import Path
 
 from datasets import load_dataset
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 QUERIES_JSONL_PATH = PROJECT_ROOT / "data" / "queries" / "queries.jsonl"
 QRELS_DIR = PROJECT_ROOT / "data" / "qrels"
 
@@ -24,13 +26,8 @@ print(f"queries: {len(queries):,} -> {QUERIES_JSONL_PATH}")
 
 QRELS_DIR.mkdir(parents=True, exist_ok=True)
 
-QRELS_OUTPUTS = {
-    "train": QRELS_DIR / "qrels_train.tsv",
-    "validation": QRELS_DIR / "qrels_validation.tsv",
-    "test": QRELS_DIR / "qrels_test.tsv",
-}
-
-for split, path in QRELS_OUTPUTS.items():
+for split in ("train", "validation", "test"):
+    path = QRELS_DIR / f"qrels_{split}.tsv"
     qrels = load_dataset("BeIR/fever-qrels", split=split)
     with path.open("w", encoding="utf-8") as f:
         f.write("query-id\tcorpus-id\tscore\n")

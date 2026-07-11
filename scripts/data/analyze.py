@@ -2,7 +2,7 @@
 FEVER dataset analytics: corpus, queries, qrels stats, figures, README, hash.
 
 Run from dls_project root:
-    python scripts/analysis.py
+    python scripts/data/analyze.py
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 ANALYSIS_DIR = DATA_DIR / "analysis"
 FIGURES_DIR = ANALYSIS_DIR / "figures"

@@ -38,6 +38,9 @@ huggingface/
 faiss.index
 doc_embeddings.npy
 
+# Trained model checkpoints
+models/
+
 # --- data/ — всё регенерируется скриптами, в git только структура папок ---
 data/**/*
 !data/**/.gitkeep
