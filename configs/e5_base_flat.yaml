@@ -1,7 +1,7 @@
-name: bge_small_flat
+name: e5_base_flat
 
 model:
-  name: BAAI/bge-small-en-v1.5
+  name: intfloat/e5-base-v2
   normalize: true
   query_prompt: query
   doc_prompt: document

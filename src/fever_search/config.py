@@ -13,6 +13,7 @@ class ModelConfig:
     query_prompt: str | None = "query"
     doc_prompt: str | None = "document"
     batch_size: int = 64
+    device: str | None = None   # null = auto (sentence-transformers picks cuda > mps > cpu); or "cuda", "cuda:0", "cpu"
 
 
 @dataclass
