@@ -1,0 +1,20 @@
+name: e5_base_hnsw
+
+model:
+  name: intfloat/e5-base-v2
+  normalize: true
+  query_prompt: "query: "
+  doc_prompt: "passage: "
+  batch_size: 256
+  fp16: false
+  device: mps
+
+index:
+  type: hnsw
+  hnsw_m: 32           # neighbours per node (graph degree)
+  ef_construction: 200 # build-time candidate list (quality/build-time trade-off)
+  ef_search: 64        # search-time candidate list; sweep later for the Pareto curve
+
+eval:
+  top_k: 100
+  k_values: [1, 5, 10, 100]

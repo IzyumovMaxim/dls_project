@@ -19,9 +19,11 @@ class ModelConfig:
 
 @dataclass
 class IndexConfig:
-    type: str = "flat"          # flat | ivf | hnsw
-    nlist: int = 4096           # ivf: number of Voronoi cells
-    nprobe: int = 32            # ivf: cells probed at search time
+    type: str = "flat"          # flat | ivf | ivfpq | hnsw
+    nlist: int = 4096           # ivf/ivfpq: number of Voronoi cells
+    nprobe: int = 32            # ivf/ivfpq: cells probed at search time
+    pq_m: int = 96              # ivfpq: PQ sub-quantizers (must divide dim)
+    pq_nbits: int = 8           # ivfpq: bits per PQ code
     hnsw_m: int = 32            # hnsw: neighbours per node
     ef_construction: int = 200  # hnsw: build-time candidate list
     ef_search: int = 64         # hnsw: search-time candidate list
