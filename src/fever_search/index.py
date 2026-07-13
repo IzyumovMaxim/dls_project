@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import faiss
 import numpy as np
@@ -23,6 +24,13 @@ def build_faiss(embeddings: np.ndarray, cfg: IndexConfig) -> faiss.Index:
         index = faiss.IndexIVFFlat(quantizer, dim, cfg.nlist, faiss.METRIC_INNER_PRODUCT)
         index.train(embeddings)
         index.nprobe = cfg.nprobe
+    elif cfg.type == "ivfpq":
+        if dim % cfg.pq_m != 0:
+            raise ValueError(f"ivfpq: dim {dim} not divisible by pq_m={cfg.pq_m}")
+        quantizer = faiss.IndexFlatIP(dim)
+        index = faiss.IndexIVFPQ(quantizer, dim, cfg.nlist, cfg.pq_m, cfg.pq_nbits, faiss.METRIC_INNER_PRODUCT)
+        index.train(embeddings)
+        index.nprobe = cfg.nprobe
     elif cfg.type == "hnsw":
         index = faiss.IndexHNSWFlat(dim, cfg.hnsw_m, faiss.METRIC_INNER_PRODUCT)
         index.hnsw.efConstruction = cfg.ef_construction
@@ -33,22 +41,33 @@ def build_faiss(embeddings: np.ndarray, cfg: IndexConfig) -> faiss.Index:
     return index
 
 
-def build_and_save(config: ExperimentConfig, encoder: Encoder | None = None) -> None:
-    if not paths.CORPUS_PATH.exists():
-        raise FileNotFoundError(f"Corpus not found: {paths.CORPUS_PATH}. Run scripts/data/build_corpus.py")
+def build_and_save(
+    config: ExperimentConfig,
+    encoder: Encoder | None = None,
+    reuse_embeddings_dir: str | Path | None = None,
+) -> None:
+    if reuse_embeddings_dir is not None:
+        # Rebuild a different index type from already-encoded vectors (no re-encoding).
+        src = Path(reuse_embeddings_dir)
+        embeddings = np.load(src / "doc_embeddings.npy").astype(np.float32)
+        doc_ids = json.loads((src / "doc_ids.json").read_text(encoding="utf-8"))
+        print(f"Reusing embeddings from {src}: {len(doc_ids):,} x {embeddings.shape[1]} (no re-encode)")
+    else:
+        if not paths.CORPUS_PATH.exists():
+            raise FileNotFoundError(f"Corpus not found: {paths.CORPUS_PATH}. Run scripts/data/build_corpus.py")
+        encoder = encoder or Encoder(config.model)
+        docs = list(iter_jsonl(paths.CORPUS_PATH))
+        doc_ids = [str(doc["_id"]) for doc in docs]
+        passages = [doc_to_passage(doc) for doc in docs]
+        embeddings = encoder.encode_documents(passages, show_progress_bar=True)
 
-    encoder = encoder or Encoder(config.model)
-    docs = list(iter_jsonl(paths.CORPUS_PATH))
-    doc_ids = [str(doc["_id"]) for doc in docs]
-    passages = [doc_to_passage(doc) for doc in docs]
-
-    embeddings = encoder.encode_documents(passages, show_progress_bar=True)
     index = build_faiss(embeddings, config.index)
 
     out_dir = paths.index_dir(config.name)
     out_dir.mkdir(parents=True, exist_ok=True)
     faiss.write_index(index, str(out_dir / "faiss.index"))
-    np.save(out_dir / "doc_embeddings.npy", embeddings)
+    if reuse_embeddings_dir is None:
+        np.save(out_dir / "doc_embeddings.npy", embeddings)  # skip 1.5 GB re-save when reusing
     (out_dir / "doc_ids.json").write_text(json.dumps(doc_ids), encoding="utf-8")
 
     manifest = {
@@ -65,14 +84,24 @@ def build_and_save(config: ExperimentConfig, encoder: Encoder | None = None) -> 
     print(f"Index [{config.index.type}]: {len(doc_ids):,} docs, dim {embeddings.shape[1]} -> {out_dir}")
 
 
-def load(name: str) -> tuple[faiss.Index, list[str], dict]:
+def apply_search_params(faiss_index: faiss.Index, cfg: IndexConfig) -> None:
+    """Apply search-time knobs from config (no rebuild needed)."""
+    if cfg.type in ("ivf", "ivfpq"):
+        faiss_index.nprobe = cfg.nprobe
+    elif cfg.type == "hnsw":
+        faiss_index.hnsw.efSearch = cfg.ef_search
+
+
+def load(name: str, index_cfg: IndexConfig | None = None) -> tuple[faiss.Index, list[str], dict]:
     out_dir = paths.index_dir(name)
     faiss_path = out_dir / "faiss.index"
     ids_path = out_dir / "doc_ids.json"
     if not faiss_path.exists() or not ids_path.exists():
         raise FileNotFoundError(f"Index not found in {out_dir}. Run scripts/build_index.py --config ...")
-    index = faiss.read_index(str(faiss_path))
+    faiss_index = faiss.read_index(str(faiss_path))
+    if index_cfg is not None:
+        apply_search_params(faiss_index, index_cfg)
     doc_ids = json.loads(ids_path.read_text(encoding="utf-8"))
     manifest_path = out_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
-    return index, doc_ids, manifest
+    return faiss_index, doc_ids, manifest

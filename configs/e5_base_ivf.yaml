@@ -1,0 +1,19 @@
+name: e5_base_ivf
+
+model:
+  name: intfloat/e5-base-v2
+  normalize: true
+  query_prompt: "query: "
+  doc_prompt: "passage: "
+  batch_size: 256
+  fp16: false
+  device: mps
+
+index:
+  type: ivf
+  nlist: 4096      # ~6*sqrt(500k), within faiss-recommended 4-16*sqrt(N)
+  nprobe: 32       # cells probed at search (32/4096); sweep later for the Pareto curve
+
+eval:
+  top_k: 100
+  k_values: [1, 5, 10, 100]

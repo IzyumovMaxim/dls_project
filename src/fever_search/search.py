@@ -24,7 +24,7 @@ class SearchHit:
 class SearchEngine:
     def __init__(self, config: ExperimentConfig, model_path: str | None = None) -> None:
         self.config = config
-        self._index, self._doc_ids, self.manifest = index.load(config.name)
+        self._index, self._doc_ids, self.manifest = index.load(config.name, index_cfg=config.index)
         self._encoder = Encoder(config.model, model_path=model_path)
         self._corpus = load_corpus(paths.CORPUS_PATH)
 

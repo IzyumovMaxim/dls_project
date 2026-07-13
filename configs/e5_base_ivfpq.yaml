@@ -1,0 +1,21 @@
+name: e5_base_ivfpq
+
+model:
+  name: intfloat/e5-base-v2
+  normalize: true
+  query_prompt: "query: "
+  doc_prompt: "passage: "
+  batch_size: 256
+  fp16: false
+  device: mps
+
+index:
+  type: ivfpq
+  nlist: 4096      # coarse cells
+  nprobe: 32       # cells probed at search
+  pq_m: 96         # 768/96 = 8 dims per sub-quantizer -> 96 bytes/vec
+  pq_nbits: 8      # 256 centroids per sub-quantizer
+
+eval:
+  top_k: 100
+  k_values: [1, 5, 10, 100]

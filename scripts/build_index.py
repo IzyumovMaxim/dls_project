@@ -15,11 +15,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     parser.add_argument("--model-path", default=None, help="override model, e.g. a fine-tuned checkpoint")
+    parser.add_argument("--from-embeddings", default=None,
+                        help="reuse doc_embeddings.npy/doc_ids.json from this dir instead of re-encoding the corpus")
     args = parser.parse_args()
 
     config = load_config(args.config)
     encoder = Encoder(config.model, model_path=args.model_path) if args.model_path else None
-    index.build_and_save(config, encoder=encoder)
+    index.build_and_save(config, encoder=encoder, reuse_embeddings_dir=args.from_embeddings)
 
 
 if __name__ == "__main__":
