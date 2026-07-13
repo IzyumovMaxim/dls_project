@@ -1,0 +1,26 @@
+name: e5_base_ft
+
+model:
+  name: intfloat/e5-base-v2
+  normalize: true
+  query_prompt: "query: "
+  doc_prompt: "passage: "
+  batch_size: 256
+  fp16: true
+  device: cuda
+
+index:
+  type: flat
+
+eval:
+  top_k: 100
+  k_values: [1, 5, 10, 100]
+
+train:
+  base_config: configs/e5_base_flat.yaml   # index used to mine hard negatives
+  epochs: 1
+  lr: 2.0e-5                   # not 2e-5: YAML parses the latter as a string
+  batch_size: 32
+  warmup_ratio: 0.1
+  hard_negatives: 4
+  max_train_pairs: null
