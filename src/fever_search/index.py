@@ -84,12 +84,25 @@ def build_and_save(
     print(f"Index [{config.index.type}]: {len(doc_ids):,} docs, dim {embeddings.shape[1]} -> {out_dir}")
 
 
+# The one search-time knob per index type, tunable without a rebuild.
+# Keys match the IndexConfig field names, so getattr(cfg, SEARCH_KNOB[cfg.type]) reads the value.
+SEARCH_KNOB = {"ivf": "nprobe", "ivfpq": "nprobe", "hnsw": "ef_search"}
+
+
+def set_search_knob(faiss_index: faiss.Index, knob: str, value: int) -> None:
+    if knob == "nprobe":
+        faiss_index.nprobe = value
+    elif knob == "ef_search":
+        faiss_index.hnsw.efSearch = value
+    else:
+        raise ValueError(f"Unknown search knob: {knob!r} (nprobe | ef_search)")
+
+
 def apply_search_params(faiss_index: faiss.Index, cfg: IndexConfig) -> None:
-    """Apply search-time knobs from config (no rebuild needed)."""
-    if cfg.type in ("ivf", "ivfpq"):
-        faiss_index.nprobe = cfg.nprobe
-    elif cfg.type == "hnsw":
-        faiss_index.hnsw.efSearch = cfg.ef_search
+    """Apply search-time knobs from config (no rebuild needed). Flat has none."""
+    knob = SEARCH_KNOB.get(cfg.type)
+    if knob is not None:
+        set_search_knob(faiss_index, knob, getattr(cfg, knob))
 
 
 def load(name: str, index_cfg: IndexConfig | None = None) -> tuple[faiss.Index, list[str], dict]:

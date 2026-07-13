@@ -30,23 +30,23 @@ TOP_K = 100
 
 COMPRESSION_VARIANTS = ("flat", "sq8", "pq", "binary", "binary_rerank")
 
-ANN_INDEXES = {
-    "e5_base_ivf": {
-        "knob": "nprobe",
-        "default": 32,
-        "tuned": 64,
-    },
-    "e5_base_ivfpq": {
-        "knob": "nprobe",
-        "default": 32,
-        "tuned": 128,
-    },
-    "e5_base_hnsw": {
-        "knob": "ef_search",
-        "default": 64,
-        "tuned": 256,
-    },
-}
+ANN_CONFIGS = ("e5_base_ivf", "e5_base_ivfpq", "e5_base_hnsw")
+
+
+def ann_settings(name: str) -> dict:
+    """Where the two ANN operating points come from.
+
+    'tuned' is read from configs/<name>.yaml — that is what tune_ann.py writes and what
+    SearchEngine actually serves, so the benchmark can never drift from the shipped config.
+    'default' is the IndexConfig dataclass default: a fixed reference point to tune against.
+    """
+    cfg = load_config(paths.PROJECT_ROOT / "configs" / f"{name}.yaml").index
+    knob = index.SEARCH_KNOB[cfg.type]
+    return {
+        "knob": knob,
+        "default": getattr(IndexConfig(type=cfg.type), knob),
+        "tuned": getattr(cfg, knob),
+    }
 
 
 def _load_compression_runner():
@@ -55,13 +55,6 @@ def _load_compression_runner():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.run_variant
-
-
-def set_knob(faiss_index, knob: str, value: int) -> None:
-    if knob == "nprobe":
-        faiss_index.nprobe = value
-    else:
-        faiss_index.hnsw.efSearch = value
 
 
 def run_ann(
@@ -76,7 +69,7 @@ def run_ann(
     lat_repeat: int,
 ) -> dict:
     faiss_index, doc_ids, manifest = index.load(name)
-    set_knob(faiss_index, knob, value)
+    index.set_search_knob(faiss_index, knob, value)
     doc_ids_arr = np.array(doc_ids)
     mem = bench.index_num_bytes(faiss_index, binary=False)
 
@@ -191,6 +184,7 @@ def main() -> None:
 
     results: list[dict] = []
     run_compression_fn = _load_compression_runner()
+    ann_params = {name: ann_settings(name) for name in ANN_CONFIGS}
 
     if not args.ann_only:
         emb = np.load(index_dir / "doc_embeddings.npy").astype(np.float32)
@@ -231,9 +225,15 @@ def main() -> None:
             f"P@1={flat_metrics['precision@1']:.4f} nDCG@10={flat_metrics['ndcg@10']:.4f}"
         )
 
-        for name, spec in ANN_INDEXES.items():
+        for name, spec in ann_params.items():
             print(f"\n=== ann / {name} ===")
-            for label, value in (("default", spec["default"]), ("tuned", spec["tuned"])):
+            points = [("default", spec["default"])]
+            if spec["tuned"] != spec["default"]:
+                points.append(("tuned", spec["tuned"]))
+            else:
+                print(f"  note: {name} still at the default {spec['knob']}={spec['default']} "
+                      f"— run scripts/tune_ann.py to produce a tuned point")
+            for label, value in points:
                 results.append(run_ann(
                     name, spec["knob"], value, label,
                     qvecs, qids, qrels, args.lat_warmup, args.lat_repeat,
@@ -251,7 +251,7 @@ def main() -> None:
         "num_queries": len(qids),
         "pq": {"m": args.pq_m, "nbits": args.pq_nbits},
         "rerank_depth": args.rerank_depth,
-        "ann_params": ANN_INDEXES,
+        "ann_params": ann_params,
         "results": results,
     }
     out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

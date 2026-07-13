@@ -27,20 +27,16 @@ from fever_search.config import load_config  # noqa: E402
 K_VALUES = (1, 5, 10, 100)
 TOP_K = 100
 
-SWEEPS = {
-    "e5_base_ivf": ("nprobe", [8, 16, 32, 64, 128, 256]),
-    "e5_base_ivfpq": ("nprobe", [8, 16, 32, 64, 128, 256]),
-    "e5_base_hnsw": ("ef_search", [16, 32, 64, 128, 256]),
+SWEEP_VALUES = {
+    "e5_base_ivf": [8, 16, 32, 64, 128, 256],
+    "e5_base_ivfpq": [8, 16, 32, 64, 128, 256],
+    "e5_base_hnsw": [16, 32, 64, 128, 256],
 }
 
-KNOB_YAML_KEY = {"nprobe": "nprobe", "ef_search": "ef_search"}
 
-
-def set_knob(faiss_index, knob: str, value: int) -> None:
-    if knob == "nprobe":
-        faiss_index.nprobe = value
-    else:
-        faiss_index.hnsw.efSearch = value
+def knob_for(name: str) -> str:
+    """Knob name doubles as the IndexConfig field and the YAML key — one source of truth."""
+    return index.SEARCH_KNOB[load_config(f"configs/{name}.yaml").index.type]
 
 
 def sweep_one(
@@ -58,7 +54,7 @@ def sweep_one(
     points = []
     print(f"\n=== {name} ({knob}) ===")
     for value in values:
-        set_knob(faiss_index, knob, value)
+        index.set_search_knob(faiss_index, knob, value)
         _, indices = faiss_index.search(qvecs, TOP_K)
         metrics = bench.aggregate_metrics(
             bench.retrieved_from_ids(indices, qids, doc_ids_arr), qrels, K_VALUES
@@ -100,15 +96,13 @@ def pick_best(points: list[dict], flat_recall: float, recall_margin: float, knob
 
 
 def update_config_yaml(config_path: Path, knob: str, value: int) -> None:
-    yaml_key = KNOB_YAML_KEY[knob]
     text = config_path.read_text(encoding="utf-8")
-    pattern = rf"^(\s*{re.escape(yaml_key)}:\s*)\d+"
-    replacement = rf"\g<1>{value}"
-    new_text, n = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+    pattern = rf"^(\s*{re.escape(knob)}:\s*)\d+"
+    new_text, n = re.subn(pattern, rf"\g<1>{value}", text, count=1, flags=re.MULTILINE)
     if n != 1:
-        raise RuntimeError(f"Could not update {yaml_key} in {config_path}")
+        raise RuntimeError(f"Could not update {knob} in {config_path}")
     config_path.write_text(new_text, encoding="utf-8")
-    print(f"  updated {config_path.name}: {yaml_key}={value}")
+    print(f"  updated {config_path.name}: {knob}={value}")
 
 
 def main() -> None:
@@ -135,7 +129,8 @@ def main() -> None:
 
     curves: dict[str, dict] = {}
     chosen: dict[str, dict] = {}
-    for name, (knob, values) in SWEEPS.items():
+    for name, values in SWEEP_VALUES.items():
+        knob = knob_for(name)
         points = sweep_one(
             name, knob, values, qvecs, qids, qrels,
             lat_warmup=args.lat_warmup, lat_repeat=args.lat_repeat,
@@ -164,7 +159,7 @@ def main() -> None:
 
     if args.eval_test:
         import subprocess
-        for name in SWEEPS:
+        for name in SWEEP_VALUES:
             cmd = [
                 sys.executable,
                 str(paths.PROJECT_ROOT / "scripts" / "evaluate.py"),
