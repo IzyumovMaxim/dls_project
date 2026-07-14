@@ -1,0 +1,21 @@
+name: e5_base_pq192
+
+model:
+  name: intfloat/e5-base-v2
+  normalize: true
+  query_prompt: "query: "      # e5 is trained with query:/passage: prefixes on BOTH sides
+  doc_prompt: "passage: "
+  batch_size: 256
+  fp16: true
+  device: cuda
+
+index:
+  type: pq
+  opq: false         # e5_base_opq192 is this index plus the rotation: the pair isolates its effect
+  pq_m: 192          # 768/192 = 4 dims per sub-quantizer -> 192 bytes/vec
+  pq_nbits: 8
+  vectors_from: e5_base_flat
+
+eval:
+  top_k: 100
+  k_values: [1, 5, 10, 100]

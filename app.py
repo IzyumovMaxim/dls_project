@@ -17,7 +17,7 @@ from fever_search.config import load_config  # noqa: E402
 from fever_search.search import SearchEngine  # noqa: E402
 from fever_search.text import detokenize, evidence_candidates, split_sentences  # noqa: E402
 
-CONFIG_PATH = "configs/e5_base_flat.yaml"
+CONFIG_PATH = "configs/e5_base_opq192.yaml"
 TOP_K = 10
 
 EXAMPLES = [

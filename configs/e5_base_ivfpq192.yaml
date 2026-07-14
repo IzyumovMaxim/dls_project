@@ -1,0 +1,21 @@
+name: e5_base_ivfpq192
+
+model:
+  name: intfloat/e5-base-v2
+  normalize: true
+  query_prompt: "query: "
+  doc_prompt: "passage: "
+  batch_size: 256
+  fp16: false
+  device: mps
+
+index:
+  type: ivfpq
+  nlist: 4096
+  nprobe: 256        # e5_base_ivfpq at pq_m=96: the pair separates pruning loss from coding loss
+  pq_m: 192          # 768/192 = 4 dims per sub-quantizer -> 192 bytes/vec
+  pq_nbits: 8
+
+eval:
+  top_k: 100
+  k_values: [1, 5, 10, 100]

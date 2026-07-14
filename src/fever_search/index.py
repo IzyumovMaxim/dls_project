@@ -43,6 +43,16 @@ def build_faiss(embeddings: np.ndarray, cfg: IndexConfig):
         index = faiss.IndexIVFFlat(quantizer, dim, cfg.nlist, faiss.METRIC_INNER_PRODUCT)
         index.train(embeddings)
         index.nprobe = cfg.nprobe
+    elif cfg.type == "pq":
+        # Exhaustive scan of PQ codes: no pruning, so the only loss is the coding error.
+        if dim % cfg.pq_m != 0:
+            raise ValueError(f"pq: dim {dim} not divisible by pq_m={cfg.pq_m}")
+        if cfg.opq:
+            index = faiss.index_factory(
+                dim, f"OPQ{cfg.pq_m},PQ{cfg.pq_m}x{cfg.pq_nbits}", faiss.METRIC_INNER_PRODUCT)
+        else:
+            index = faiss.IndexPQ(dim, cfg.pq_m, cfg.pq_nbits, faiss.METRIC_INNER_PRODUCT)
+        index.train(embeddings)
     elif cfg.type == "ivfpq":
         if dim % cfg.pq_m != 0:
             raise ValueError(f"ivfpq: dim {dim} not divisible by pq_m={cfg.pq_m}")
@@ -55,7 +65,7 @@ def build_faiss(embeddings: np.ndarray, cfg: IndexConfig):
         index.hnsw.efConstruction = cfg.ef_construction
         index.hnsw.efSearch = cfg.ef_search
     else:
-        raise ValueError(f"Unknown index type: {cfg.type!r} (flat | ivf | ivfpq | hnsw | binary_rerank)")
+        raise ValueError(f"Unknown index type: {cfg.type!r} (flat | pq | ivf | ivfpq | hnsw | binary_rerank)")
     index.add(embeddings)
     return index
 

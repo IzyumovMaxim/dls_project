@@ -8,7 +8,7 @@ draws the curve. Pass --split test only to report the chosen point, never to cho
 
     python scripts/bench/sweep_index.py --benchmark fever
 
-Output: data/analysis/sweep_<benchmark>.json
+Output: data/analysis/sweep_<benchmark>_<split>.json
 """
 
 import argparse
@@ -29,6 +29,7 @@ TOP_K = 100
 SWEEP_VALUES = {
     "e5_base_ivf": [8, 16, 32, 64, 128, 256],
     "e5_base_ivfpq": [8, 16, 32, 64, 128, 256],
+    "e5_base_ivfpq192": [8, 16, 32, 64, 128, 256, 512],
     "e5_base_hnsw": [16, 32, 64, 128, 256],
 }
 
@@ -90,7 +91,7 @@ def main() -> None:
                   f"nDCG@10={metrics['ndcg@10']:.4f} search_p50={p50}ms")
         curves[name] = {"knob": knob, "points": points}
 
-    out = paths.DATA_DIR / "analysis" / f"sweep_{args.benchmark}.json"
+    out = paths.DATA_DIR / "analysis" / f"sweep_{args.benchmark}_{args.split}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({
         "benchmark": f"{args.benchmark}/{args.split}", "num_queries": len(qids),

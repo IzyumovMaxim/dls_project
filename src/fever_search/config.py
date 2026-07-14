@@ -19,16 +19,18 @@ class ModelConfig:
 
 @dataclass
 class IndexConfig:
-    type: str = "flat"          # flat | ivf | ivfpq | hnsw | binary_rerank
+    type: str = "flat"          # flat | pq | ivf | ivfpq | hnsw | binary_rerank
     nlist: int = 4096           # ivf/ivfpq: number of Voronoi cells
     nprobe: int = 32            # ivf/ivfpq: cells probed at search time
-    pq_m: int = 96              # ivfpq: PQ sub-quantizers (must divide dim)
-    pq_nbits: int = 8           # ivfpq: bits per PQ code
+    pq_m: int = 96              # pq/ivfpq: PQ sub-quantizers (must divide dim)
+    pq_nbits: int = 8           # pq/ivfpq: bits per PQ code
+    opq: bool = False           # pq: rotate the space before quantizing (same code size)
     hnsw_m: int = 32            # hnsw: neighbours per node
     ef_construction: int = 200  # hnsw: build-time candidate list
     ef_search: int = 64         # hnsw: search-time candidate list
     rerank_depth: int = 1000    # binary_rerank: Hamming shortlist re-scored against the fp32 vectors
-    vectors_from: str | None = None  # binary_rerank: index holding the fp32 + sentence vectors it reuses
+    vectors_from: str | None = None  # index holding the fp32 + sentence vectors this one reuses;
+                                     # required by any index that stores codes rather than vectors
 
 
 @dataclass

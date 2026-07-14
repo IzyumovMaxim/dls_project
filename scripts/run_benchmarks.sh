@@ -33,4 +33,4 @@ python scripts/bench/sweep_index.py --benchmark "$BENCH"
 # Quality comparison table across every config.
 echo "== comparison =="
 python scripts/bench/compare.py --benchmark "$BENCH"
-echo "== done: see data/quality, data/latency, data/analysis, $FLAT/compression_$BENCH.json =="
+echo "== done: see data/quality, data/latency, data/analysis, $FLAT/compression_${BENCH}_test_m96.json =="
