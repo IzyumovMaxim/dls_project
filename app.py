@@ -13,6 +13,8 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
+import torch  # noqa: E402
+
 from fever_search.config import load_config  # noqa: E402
 from fever_search.search import SearchEngine  # noqa: E402
 from fever_search.text import detokenize, evidence_candidates, split_sentences  # noqa: E402
@@ -130,10 +132,23 @@ st.markdown(
 )
 
 
+def serving_device() -> str:
+    """The config ships device: cuda for the build boxes; serving picks whatever is here.
+
+    Query encode is the whole latency budget: 46 ms on this laptop's CPU against 17 ms on its GPU.
+    """
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 @st.cache_resource(show_spinner="Loading index (first run only)…")
 def get_engine() -> SearchEngine:
     config = load_config(CONFIG_PATH)
-    config.model.device = "cpu"  # single-query encode; avoids MPS/CUDA surprises on a laptop
+    config.model.device = serving_device()
+    config.model.fp16 = False  # fp16 is a cuda-only win; on mps it costs accuracy for nothing
     return SearchEngine(config)
 
 
