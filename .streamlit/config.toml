@@ -1,0 +1,9 @@
+[theme]
+base = "dark"
+primaryColor = "#6366f1"          # focus rings and accents; overrides Streamlit's default red
+backgroundColor = "#0e0e11"
+secondaryBackgroundColor = "#1a1a20"
+textColor = "#e5e7eb"
+
+[browser]
+gatherUsageStats = false

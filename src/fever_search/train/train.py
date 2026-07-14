@@ -38,7 +38,7 @@ def build_examples(config: ExperimentConfig, corpus: dict, queries: dict) -> lis
         if not hard_path.exists():
             raise FileNotFoundError(
                 f"{hard_path} not found, but train.hard_negatives={num_negatives}. "
-                "Run scripts/mine_negatives.py first, or set hard_negatives: 0."
+                "Run scripts/train/mine_negatives.py first, or set hard_negatives: 0."
             )
         dropped = 0
         for line in hard_path.read_text(encoding="utf-8").splitlines():

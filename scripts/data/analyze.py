@@ -362,8 +362,8 @@ query-id\tcorpus-id\tscore
 ## Как с этим работать
 
 1. **Собрать данные**
-   - `python scripts/create_test.py` — выгрузить queries и qrels
-   - `python scripts/create_corpus.py` — собрать корпус 500k
+   - `python scripts/data/export_fever.py` — выгрузить queries и qrels
+   - `python scripts/data/build_corpus.py` — собрать корпус 500k
 
 2. **Взять test queries для eval**
 
@@ -403,7 +403,7 @@ def build_hash_md(corpus_path: Path) -> str:
     if not corpus_path.exists():
         return (
             "# Corpus hash\n\n"
-            "Corpus file not found. Run `python scripts/create_corpus.py` first.\n"
+            "Corpus file not found. Run `python scripts/data/build_corpus.py` first.\n"
         )
 
     digest = sha256_of_file(corpus_path)
@@ -456,7 +456,7 @@ def main() -> None:
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
     if not QUERIES_PATH.exists() or not (QRELS_DIR / "qrels_test.tsv").exists():
-        print("Run scripts/create_test.py first to export queries and qrels.")
+        print("Run scripts/data/export_fever.py first to export queries and qrels.")
         sys.exit(1)
 
     test_qrels_rows = load_qrels_split("test")

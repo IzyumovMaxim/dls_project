@@ -1,8 +1,12 @@
-"""Axis B - sweep the search-time knob of already-built ANN indexes to trace recall<->latency.
+"""Sweep the search-time knob of already-built ANN indexes to trace recall<->latency.
 
 nprobe (IVF/IVFPQ) and efSearch (HNSW) are search-time params: no rebuild. Queries load from cache.
 
-    python scripts/sweep_index.py --benchmark fever
+Defaults to validation: picking an operating point off a curve drawn on test is tuning on test.
+Use scripts/index/tune_ann.py to select a value and write it into the configs; this script only
+draws the curve. Pass --split test only to report the chosen point, never to choose it.
+
+    python scripts/bench/sweep_index.py --benchmark fever
 
 Output: data/analysis/sweep_<benchmark>.json
 """
@@ -14,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from fever_search import bench, index, paths  # noqa: E402
 from fever_search.config import load_config  # noqa: E402
@@ -41,7 +45,7 @@ def flat_recall_100(qvecs: np.ndarray, qids: list[str], qrels: dict) -> float:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--benchmark", default="fever", choices=["fever", "climate"])
-    parser.add_argument("--split", default="test")
+    parser.add_argument("--split", default="validation")
     parser.add_argument("--cache-dir", default=str(paths.index_dir("e5_base_flat")),
                         help="dir holding the cached query_emb_*.npy")
     parser.add_argument("--configs", default=",".join(SWEEP_VALUES))
@@ -56,7 +60,7 @@ def main() -> None:
         encode_p50 = json.loads(flat_lat.read_text())["stages_ms"]["encode"]["p50"]
     else:
         encode_p50 = None
-        print(f"NOTE: {flat_lat} missing — run scripts/latency.py for e2e numbers; reporting search only")
+        print(f"NOTE: {flat_lat} missing — run scripts/bench/latency.py for e2e numbers; reporting search only")
 
     names = [c.strip() for c in args.configs.split(",") if c.strip()]
     qids, qvecs, qrels = bench.load_query_vectors(

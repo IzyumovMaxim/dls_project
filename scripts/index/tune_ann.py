@@ -4,8 +4,8 @@ Sweeps nprobe (IVF/IVFPQ) and efSearch (HNSW) without rebuilding indexes.
 Picks the fastest setting that keeps recall@100 within a margin of flat on the tune split.
 Updates configs/*.yaml and optionally re-evaluates on test.
 
-    python scripts/tune_ann.py --split train
-    python scripts/tune_ann.py --split train --eval-test
+    python scripts/index/tune_ann.py --split train
+    python scripts/index/tune_ann.py --split train --eval-test
 """
 
 from __future__ import annotations
@@ -17,9 +17,8 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from fever_search import bench, index, paths  # noqa: E402
 from fever_search.config import load_config  # noqa: E402
@@ -84,15 +83,17 @@ def flat_baseline(qvecs: np.ndarray, qids: list[str], qrels: dict) -> dict:
     return metrics
 
 
-def pick_best(points: list[dict], flat_recall: float, recall_margin: float, knob: str) -> dict:
-    """Fastest point with recall@100 >= flat - margin; else highest recall."""
+def pick_best(points: list[dict], flat_recall: float, recall_margin: float) -> dict:
+    """Fastest point within `recall_margin` of flat; if none reaches it, the highest-recall point.
+
+    The fallback has to invert the objective: ranking by latency over a pool where nothing meets the
+    quality bar would hand back the fastest and therefore worst setting.
+    """
     threshold = flat_recall - recall_margin
     candidates = [p for p in points if p["recall@100"] >= threshold]
-    pool = candidates if candidates else points
-    return min(
-        pool,
-        key=lambda p: (p["search_p50_ms"], -p["ndcg@10"], -p["recall@100"]),
-    )
+    if not candidates:
+        return max(points, key=lambda p: (p["recall@100"], p["ndcg@10"], -p["search_p50_ms"]))
+    return min(candidates, key=lambda p: (p["search_p50_ms"], -p["ndcg@10"], -p["recall@100"]))
 
 
 def update_config_yaml(config_path: Path, knob: str, value: int) -> None:
@@ -135,7 +136,7 @@ def main() -> None:
             name, knob, values, qvecs, qids, qrels,
             lat_warmup=args.lat_warmup, lat_repeat=args.lat_repeat,
         )
-        best = pick_best(points, flat_recall, args.recall_margin, knob)
+        best = pick_best(points, flat_recall, args.recall_margin)
         curves[name] = {"knob": knob, "points": points, "chosen": best}
         chosen[name] = best
         print(

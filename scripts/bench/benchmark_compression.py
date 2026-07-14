@@ -3,7 +3,7 @@ measure index memory, single-query search p50 and full quality (P@k, R@k, MRR, n
 
 Variants are built from doc_embeddings.npy (no re-encoding). Queries are encoded once and cached.
 
-    python scripts/benchmark_compression.py --index-dir data/index/e5_base_flat --benchmark fever
+    python scripts/bench/benchmark_compression.py --index-dir data/index/e5_base_flat --benchmark fever
 
 Output: <index-dir>/compression_<benchmark>.json + a markdown table on stdout.
 """
@@ -17,7 +17,7 @@ from pathlib import Path
 import faiss
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from fever_search import bench, paths  # noqa: E402
 from fever_search.config import load_config  # noqa: E402
@@ -76,13 +76,24 @@ def run_variant(name, emb, qvecs, pq_m, pq_nbits, rerank_depth, lat_warmup, lat_
         q_all, q_one = qbits, qbits[:1]
 
     build_s = time.perf_counter() - t0
-    mem = bench.index_num_bytes(index, binary=binary)
+    index_bytes = bench.index_num_bytes(index, binary=binary)
+
+    # binary_rerank re-scores its Hamming shortlist against the fp32 vectors, so those vectors are
+    # part of its footprint — counting only the 48 MB binary index would understate it by ~30x.
+    # They need not be resident: memmapping doc_embeddings.npy touches ~3 MB per query and measures
+    # the same p50, which is what `rerank_bytes_resident` reports.
+    rerank_bytes = emb.nbytes if name == "binary_rerank" else 0
+    total_bytes = index_bytes + rerank_bytes
+
     indices = search(q_all, TOP_K)
     latency = bench.time_calls(lambda: search(q_one, TOP_K), lat_warmup, lat_repeat)
     return {
         "indices": indices,
-        "memory_bytes": mem,
-        "memory_human": bench.human_bytes(mem),
+        "index_bytes": index_bytes,
+        "rerank_bytes": rerank_bytes,
+        "memory_bytes": total_bytes,
+        "memory_human": bench.human_bytes(total_bytes),
+        "memory_resident_human": bench.human_bytes(index_bytes),  # fp32 side memmapped off-RAM
         "search_p50_ms": latency["p50"],
         "build_s": round(build_s, 1),
     }
@@ -131,18 +142,31 @@ def main() -> None:
         results.append({
             "variant": name,
             "memory": v["memory_human"],
+            "memory_resident": v["memory_resident_human"],
             "memory_bytes": v["memory_bytes"],
+            "index_bytes": v["index_bytes"],
+            "rerank_bytes": v["rerank_bytes"],
             "d_recall": "" if flat_recall is None else round(metrics["recall@100"] - flat_recall, 4),
             "search_p50_ms": v["search_p50_ms"],
             "build_s": v["build_s"],
             **metrics,
         })
-        print(f"  memory={v['memory_human']}  recall@100={metrics['recall@100']}  "
+        note = "" if not v["rerank_bytes"] else (
+            f" (index {bench.human_bytes(v['index_bytes'])} + fp32 rerank vectors "
+            f"{bench.human_bytes(v['rerank_bytes'])}; memmap the latter to keep only the index resident)"
+        )
+        print(f"  memory={v['memory_human']}{note}  recall@100={metrics['recall@100']}  "
               f"nDCG@10={metrics['ndcg@10']}  search_p50={v['search_p50_ms']}ms")
 
-    compact = ["variant", "memory", "recall@100", "d_recall", "search_p50_ms", "ndcg@10", "build_s"]
+    compact = ["variant", "memory", "memory_resident", "recall@100", "d_recall", "search_p50_ms", "ndcg@10", "build_s"]
     full = ["variant", "memory", "precision@1", "recall@10", "recall@100", "mrr", "ndcg@10", "search_p50_ms"]
-    hdr = {"d_recall": "Δrecall vs flat", "search_p50_ms": "search p50, ms", "build_s": "build, s"}
+    hdr = {
+        "d_recall": "Δrecall vs flat",
+        "search_p50_ms": "search p50, ms",
+        "build_s": "build, s",
+        "memory": "RAM (all in-memory)",
+        "memory_resident": "RAM (fp32 memmapped)",
+    }
     print(f"\n\n## Axis A - compression ({args.benchmark}/{args.split}, {len(qids):,} queries)\n")
     print(render_table(results, compact, hdr))
     print("\n## Full metrics\n")

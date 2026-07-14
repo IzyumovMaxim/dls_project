@@ -3,9 +3,9 @@
 Reuses cached query embeddings when available. Compression builds variants from
 doc_embeddings.npy; ANN loads pre-built indexes and only changes search-time knobs.
 
-    python scripts/benchmark_split.py --split validation
-    python scripts/benchmark_split.py --split train
-    python scripts/benchmark_split.py --split test --ann-only
+    python scripts/bench/benchmark_split.py --split validation
+    python scripts/bench/benchmark_split.py --split train
+    python scripts/bench/benchmark_split.py --split test --ann-only
 
 Output: data/analysis/benchmark_<benchmark>_<split>.json
 """
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from fever_search import bench, index, paths  # noqa: E402
 from fever_search.config import IndexConfig, load_config  # noqa: E402
@@ -232,7 +232,7 @@ def main() -> None:
                 points.append(("tuned", spec["tuned"]))
             else:
                 print(f"  note: {name} still at the default {spec['knob']}={spec['default']} "
-                      f"— run scripts/tune_ann.py to produce a tuned point")
+                      f"— run scripts/index/tune_ann.py to produce a tuned point")
             for label, value in points:
                 results.append(run_ann(
                     name, spec["knob"], value, label,

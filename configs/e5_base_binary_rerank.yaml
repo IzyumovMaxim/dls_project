@@ -1,0 +1,21 @@
+name: e5_base_binary_rerank
+
+model:
+  name: intfloat/e5-base-v2
+  normalize: true
+  query_prompt: "query: "      # e5 is trained with query:/passage: prefixes on BOTH sides
+  doc_prompt: "passage: "
+  batch_size: 256
+  fp16: true
+  device: cuda
+
+index:
+  type: binary_rerank
+  rerank_depth: 1000       # Hamming shortlist size re-scored exactly; 1000 recovers ~18 of the 19
+                           # nDCG points plain binary loses, at ~1 ms
+  vectors_from: e5_base_flat  # sign bits of these vectors; rerank + sentence highlight read them
+                              # back from disk, so nothing is duplicated
+
+eval:
+  top_k: 100
+  k_values: [1, 5, 10, 100]

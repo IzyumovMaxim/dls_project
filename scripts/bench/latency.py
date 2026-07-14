@@ -2,7 +2,7 @@
 
 Warmup runs are discarded; p50/p95 are the headline, max is a noisy tail. Measure alone.
 
-    python scripts/latency.py --config configs/e5_base_flat.yaml --index-dir data/index/e5_base_flat
+    python scripts/bench/latency.py --config configs/e5_base_flat.yaml --index-dir data/index/e5_base_flat
 """
 
 import argparse
@@ -13,7 +13,7 @@ from pathlib import Path
 import faiss
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from fever_search import bench, paths  # noqa: E402
 from fever_search.config import load_config  # noqa: E402

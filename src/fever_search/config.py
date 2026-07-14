@@ -19,7 +19,7 @@ class ModelConfig:
 
 @dataclass
 class IndexConfig:
-    type: str = "flat"          # flat | ivf | ivfpq | hnsw
+    type: str = "flat"          # flat | ivf | ivfpq | hnsw | binary_rerank
     nlist: int = 4096           # ivf/ivfpq: number of Voronoi cells
     nprobe: int = 32            # ivf/ivfpq: cells probed at search time
     pq_m: int = 96              # ivfpq: PQ sub-quantizers (must divide dim)
@@ -27,6 +27,8 @@ class IndexConfig:
     hnsw_m: int = 32            # hnsw: neighbours per node
     ef_construction: int = 200  # hnsw: build-time candidate list
     ef_search: int = 64         # hnsw: search-time candidate list
+    rerank_depth: int = 1000    # binary_rerank: Hamming shortlist re-scored against the fp32 vectors
+    vectors_from: str | None = None  # binary_rerank: index holding the fp32 + sentence vectors it reuses
 
 
 @dataclass
