@@ -1,10 +1,10 @@
-"""Mine hard negatives using a config's index: python scripts/mine_negatives.py --config configs/e5_base_flat.yaml"""
+"""Mine hard negatives using a config's index: python scripts/train/mine_negatives.py --config configs/e5_base_flat.yaml"""
 
 import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from fever_search.config import load_config  # noqa: E402
 from fever_search.train.mine import mine_hard_negatives  # noqa: E402

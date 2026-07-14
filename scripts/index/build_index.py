@@ -1,10 +1,10 @@
-"""Build the FAISS index for a config: python scripts/build_index.py --config configs/bge_small_flat.yaml"""
+"""Build the FAISS index for a config: python scripts/index/build_index.py --config configs/bge_small_flat.yaml"""
 
 import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from fever_search import index  # noqa: E402
 from fever_search.config import load_config  # noqa: E402

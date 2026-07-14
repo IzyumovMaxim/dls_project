@@ -20,7 +20,9 @@ def mine_hard_negatives(
     max_queries: int | None = None,
     chunk_size: int = 4096,
 ) -> Path:
-    faiss_index, doc_id_list, _ = index.load(config.name)
+    # Pass the config: on an ANN index faiss would otherwise default to nprobe=1 and
+    # the "hard" negatives would be near-random.
+    faiss_index, doc_id_list, _ = index.load(config.name, index_cfg=config.index)
     doc_ids = np.asarray(doc_id_list)
 
     qids, qvecs, qrels = bench.load_query_vectors(

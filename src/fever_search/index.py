@@ -15,8 +15,27 @@ from fever_search.data_io import doc_to_passage, iter_jsonl
 from fever_search.encoder import Encoder
 
 
-def build_faiss(embeddings: np.ndarray, cfg: IndexConfig) -> faiss.Index:
+def is_binary(index_type: str) -> bool:
+    """Binary indexes are a separate faiss hierarchy with their own read/write calls."""
+    return index_type == "binary_rerank"
+
+
+def pack_bits(vectors: np.ndarray) -> np.ndarray:
+    """Sign bits of each vector, packed 8 to a byte: 768 floats -> 96 bytes."""
+    return np.packbits(vectors > 0, axis=1)
+
+
+def build_binary(embeddings: np.ndarray) -> faiss.IndexBinary:
+    """Hamming over sign bits: a coarse proxy for cosine, re-scored by SearchEngine."""
+    index = faiss.IndexBinaryFlat(embeddings.shape[1])
+    index.add(pack_bits(embeddings))
+    return index
+
+
+def build_faiss(embeddings: np.ndarray, cfg: IndexConfig):
     dim = embeddings.shape[1]
+    if cfg.type == "binary_rerank":
+        return build_binary(embeddings)
     if cfg.type == "flat":
         index = faiss.IndexFlatIP(dim)
     elif cfg.type == "ivf":
@@ -36,7 +55,7 @@ def build_faiss(embeddings: np.ndarray, cfg: IndexConfig) -> faiss.Index:
         index.hnsw.efConstruction = cfg.ef_construction
         index.hnsw.efSearch = cfg.ef_search
     else:
-        raise ValueError(f"Unknown index type: {cfg.type!r} (flat | ivf | hnsw)")
+        raise ValueError(f"Unknown index type: {cfg.type!r} (flat | ivf | ivfpq | hnsw | binary_rerank)")
     index.add(embeddings)
     return index
 
@@ -65,7 +84,10 @@ def build_and_save(
 
     out_dir = paths.index_dir(config.name)
     out_dir.mkdir(parents=True, exist_ok=True)
-    faiss.write_index(index, str(out_dir / "faiss.index"))
+    if is_binary(config.index.type):
+        faiss.write_index_binary(index, str(out_dir / "faiss.index"))
+    else:
+        faiss.write_index(index, str(out_dir / "faiss.index"))
     if reuse_embeddings_dir is None:
         np.save(out_dir / "doc_embeddings.npy", embeddings)  # skip 1.5 GB re-save when reusing
     (out_dir / "doc_ids.json").write_text(json.dumps(doc_ids), encoding="utf-8")
@@ -84,14 +106,40 @@ def build_and_save(
     print(f"Index [{config.index.type}]: {len(doc_ids):,} docs, dim {embeddings.shape[1]} -> {out_dir}")
 
 
-def load(name: str) -> tuple[faiss.Index, list[str], dict]:
+# The one search-time knob per index type, tunable without a rebuild.
+# Keys match the IndexConfig field names, so getattr(cfg, SEARCH_KNOB[cfg.type]) reads the value.
+SEARCH_KNOB = {"ivf": "nprobe", "ivfpq": "nprobe", "hnsw": "ef_search"}
+
+
+def set_search_knob(faiss_index, knob: str, value: int) -> None:
+    if knob == "nprobe":
+        faiss_index.nprobe = value
+    elif knob == "ef_search":
+        faiss_index.hnsw.efSearch = value
+    else:
+        raise ValueError(f"Unknown search knob: {knob!r} (nprobe | ef_search)")
+
+
+def apply_search_params(faiss_index, cfg: IndexConfig) -> None:
+    """Apply search-time knobs from config. Flat and binary_rerank have none."""
+    knob = SEARCH_KNOB.get(cfg.type)
+    if knob is not None:
+        set_search_knob(faiss_index, knob, getattr(cfg, knob))
+
+
+def load(name: str, index_cfg: IndexConfig | None = None) -> tuple[object, list[str], dict]:
     out_dir = paths.index_dir(name)
     faiss_path = out_dir / "faiss.index"
     ids_path = out_dir / "doc_ids.json"
-    if not faiss_path.exists() or not ids_path.exists():
-        raise FileNotFoundError(f"Index not found in {out_dir}. Run scripts/build_index.py --config ...")
-    index = faiss.read_index(str(faiss_path))
-    doc_ids = json.loads(ids_path.read_text(encoding="utf-8"))
     manifest_path = out_dir / "manifest.json"
+    if not faiss_path.exists() or not ids_path.exists():
+        raise FileNotFoundError(f"Index not found in {out_dir}. Run scripts/index/build_index.py --config ...")
+
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
-    return index, doc_ids, manifest
+    binary = is_binary(index_cfg.type if index_cfg else manifest.get("index_type", ""))
+
+    faiss_index = faiss.read_index_binary(str(faiss_path)) if binary else faiss.read_index(str(faiss_path))
+    if index_cfg is not None:
+        apply_search_params(faiss_index, index_cfg)
+    doc_ids = json.loads(ids_path.read_text(encoding="utf-8"))
+    return faiss_index, doc_ids, manifest

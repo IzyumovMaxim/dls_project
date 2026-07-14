@@ -1,58 +1,80 @@
 # FEVER Evidence Search
 
-Векторный поиск доказательств: по claim (утверждению) находим релевантные пассажи Wikipedia. Проект курса **Deep Learning for Search** (Innopolis, 2026).
+Векторный поиск доказательств: по claim'у (утверждению) находим пассажи Wikipedia, которые его подтверждают или опровергают, и подсвечиваем конкретное предложение-доказательство. Проект курса **Deep Learning for Search** (Innopolis, 2026).
 
-**Основная задача — [BeIR/fever](https://huggingface.co/datasets/BeIR/fever)** (123 142 claim'а) поверх единого корпуса 500k. [BeIR/climate-fever](https://huggingface.co/datasets/BeIR/climate-fever) (1 535 claim'ов) — дополнительный out-of-domain бенчмарк на **том же** индексе, оценивается отдельно.
+**Основной бенчмарк — [BeIR/fever](https://huggingface.co/datasets/BeIR/fever)** (123 142 claim'а) поверх корпуса в 500 000 пассажей. [BeIR/climate-fever](https://huggingface.co/datasets/BeIR/climate-fever) — дополнительный out-of-domain бенчмарк на **том же** индексе.
 
-Метрики: nDCG@10, Recall@k, MRR. Итерации задаются **конфигами** (модель / тип индекса / дообучение) — по одному YAML на эксперимент.
+Метрики: P@k, Recall@k, MRR, nDCG@10 плюс латентность и память. Каждый эксперимент задаётся одним YAML-конфигом.
+
+## Как устроен поиск
+
+**Оффлайн:**
+
+1. Корпус 500k строится из FEVER: все gold-документы из qrels плюс случайный филлер (reservoir sampling, seed 42).
+2. `intfloat/e5-base-v2` кодирует пассажи в 768-мерные нормализованные векторы. e5 обучен с префиксами, поэтому запрос идёт как `query: …`, документ как `passage: …`.
+3. Векторы уходят в FAISS `IndexFlatIP` — раз векторы нормализованы, скалярное произведение равно косинусу.
+4. Отдельно кодируются **все 2.26 млн предложений** корпуса (fp16, 3.5 ГБ) плюс массив оффсетов: документ *i* владеет строками `[offsets[i], offsets[i+1])`.
+
+**На запрос:**
+
+1. Запрос кодируется один раз (~45 мс на CPU — самая дорогая операция всего пути).
+2. FAISS отдаёт top-10.
+3. Пассаж режется на предложения тем же модулем `fever_search.text`, которым пользовался оффлайн-билдер — иначе предпосчитанные векторы указывали бы не на те предложения.
+4. Из memmap поднимаются только векторы предложений найденных документов (~44 строки), умножаются на вектор запроса, argmax даёт предложение-доказательство. **0.1 мс.**
+
+Вторая итерация — дообучение: hard negatives майнятся по индексу, модель дообучается на `MultipleNegativesRankingLoss`.
 
 ## Структура
 
 ```
 dls_project/
-├── configs/                  # 1 YAML = 1 эксперимент
-│   ├── bge_small_flat.yaml   ├── bge_small_ivf.yaml
-│   ├── bge_small_hnsw.yaml   └── bge_small_ft.yaml   # дообученная модель
-├── src/fever_search/         # библиотека
-│   ├── config.py             # dataclass + load_config(yaml)
-│   ├── paths.py              # пути к data/, артефакты по имени конфига
-│   ├── data_io.py            # чтение corpus/queries/qrels
-│   ├── encoder.py            # обёртка SentenceTransformer
-│   ├── index.py              # FAISS build/load: flat | ivf | hnsw
-│   ├── search.py             # SearchEngine
-│   ├── eval.py               # метрики + run_eval
-│   └── train/
-│       ├── mine.py           # hard-negative mining
-│       └── train.py          # MNRL fine-tune
-├── scripts/                  # тонкие CLI (вся логика в пакете)
-│   ├── data/                 # подготовка данных (не config-driven)
-│   │   ├── export_fever.py   ├── export_climate.py
-│   │   ├── build_corpus.py   └── analyze.py
-│   ├── build_index.py    ├── evaluate.py    ├── demo.py
-│   ├── mine_negatives.py └── train.py
-├── data/                     # артефакты, не в git
-├── models/                   # чекпоинты дообучения, не в git
-└── pyproject.toml            # зависимости + пакет (uv)
+├── app.py                       # Streamlit UI
+├── configs/                     # 1 YAML = 1 эксперимент
+│   ├── e5_base_flat.yaml        # обслуживает приложение
+│   ├── e5_base_binary_rerank.yaml
+│   ├── e5_base_{ivf,ivfpq,hnsw}.yaml
+│   ├── e5_base_ft.yaml          # дообученная модель
+│   └── bge_{small,large}_flat.yaml
+├── src/fever_search/
+│   ├── config.py                # dataclass + load_config(yaml)
+│   ├── paths.py                 # артефакты адресуются именем конфига
+│   ├── data_io.py               # corpus / queries / qrels
+│   ├── encoder.py               # обёртка SentenceTransformer
+│   ├── index.py                 # FAISS: flat | ivf | ivfpq | hnsw | binary_rerank
+│   ├── search.py                # SearchEngine + поиск предложения-доказательства
+│   ├── text.py                  # разбиение на предложения (общее для билдера и рантайма)
+│   ├── bench.py                 # латентность, память, метрики
+│   ├── eval.py                  # метрики + run_eval
+│   └── train/                   # mining + MNRL fine-tune
+├── scripts/
+│   ├── data/                    # export_fever, export_climate, build_corpus, analyze
+│   ├── index/                   # build_index, build_sentence_index, tune_ann
+│   ├── train/                   # mine_negatives, train
+│   ├── bench/                   # benchmark_all + отдельные оси
+│   ├── evaluate.py, demo.py
+├── data/                        # артефакты, не в git
+└── models/                      # чекпоинты, не в git
 ```
 
-## Установка (uv)
+## Установка
 
 ```bash
-uv sync                       # создаёт .venv + uv.lock из pyproject.toml
+uv sync
 ```
 
-Дальше либо `uv run <cmd>`, либо активировать `.venv`. Скрипты сами добавляют `src/` в путь, установка пакета необязательна.
+Скрипты сами добавляют `src/` в путь. На Linux torch ставится из CUDA-индекса (`pytorch-cu124`), на macOS — с PyPI; пин в `pyproject.toml` привязан к платформе.
+
+Запуск приложения:
+
+```bash
+uv run streamlit run app.py     # -> http://localhost:8501
+```
 
 ## Данные
 
-Формат BeIR: `corpus` / `queries` (`{_id, title, text}`) / `qrels` (TSV `query-id`, `corpus-id`, `score`). Сплит train/validation/test задаётся **только в qrels** (FEVER — все три, climate-fever — только `test`).
+Формат BeIR: `corpus` / `queries` (`{_id, title, text}`) / `qrels` (TSV). Сплит train/validation/test задаётся **только в qrels**.
 
-| Бенчмарк | Корпус | Индекс | Файлы |
-|----------|--------|--------|-------|
-| **FEVER** (основной) | 5.4M Wikipedia → срез 500k | per-config | `data/queries/`, `data/qrels/` |
-| **Climate-FEVER** | тот же Wikipedia | тот же индекс | `data/climate-fever/` |
-
-**Корпус 500k:** все gold-документы из qrels FEVER (train/val/test) и climate-fever (test) обязательно в индексе (потолок Recall/nDCG = 1.0), остальное — reservoir sampling (seed=42). Собрано 500 000 (15 613 gold + 484 387 filler), FEVER test-gold покрыт 100%; 57 climate-evidence отсутствуют в дампе fever → `data/corpus/missing_gold_ids.txt`.
+**Про срез 500k.** В корпус обязательно попадают все gold-документы из qrels, остальное добирается случайной выборкой. Срез **намеренно смещён**: без gold-документов в индексе метрики были бы бессмысленны. Как следствие, наши числа выше, чем были бы на полных 5.4M FEVER — это цена того, чтобы вообще иметь измеримый потолок. Распределения длин gold и филлера сравниваются в `data/analysis/figures/`.
 
 ## Пайплайн
 
@@ -60,53 +82,44 @@ uv sync                       # создаёт .venv + uv.lock из pyproject.to
 # 1. данные (один раз)
 python scripts/data/export_fever.py
 python scripts/data/export_climate.py
-python scripts/data/build_corpus.py        # ~5-10 мин
-python scripts/data/analyze.py             # статистика -> data/analysis
+python scripts/data/build_corpus.py
+python scripts/data/analyze.py
 
-# 2. индекс + eval для конфига
-python scripts/build_index.py --config configs/bge_small_flat.yaml
-python scripts/evaluate.py   --config configs/bge_small_flat.yaml --benchmark fever   --split test
-python scripts/evaluate.py   --config configs/bge_small_flat.yaml --benchmark climate --split test
-python scripts/demo.py       --config configs/bge_small_flat.yaml
+# 2. индекс
+python scripts/index/build_index.py --config configs/e5_base_flat.yaml
+python scripts/index/build_sentence_index.py --config configs/e5_base_flat.yaml --device cuda
 
-# 3. сравнить метрики моделей эмбедингов
-python scripts/compare.py
-python scripts/compare.py --benchmark fever
-python scripts/compare.py --metrics ndcg@10,recall@10,mrr --sort-by recall@10
-python scripts/compare.py --out data/quality/comparison.md
+# другие типы индексов строятся из тех же эмбеддингов, без перекодирования корпуса
+python scripts/index/build_index.py --config configs/e5_base_binary_rerank.yaml \
+    --from-embeddings data/index/e5_base_flat
 
-# 3. дообучение (итерация: hard negatives + MNRL)
-python scripts/mine_negatives.py --config configs/bge_small_ft.yaml   # использует индекс bge_small_flat
-python scripts/train.py          --config configs/bge_small_ft.yaml   # -> models/bge_small_ft
-python scripts/build_index.py    --config configs/bge_small_ft.yaml --model-path models/bge_small_ft
-python scripts/evaluate.py       --config configs/bge_small_ft.yaml --model-path models/bge_small_ft --benchmark fever --split test
+# 3. оценка
+python scripts/evaluate.py --config configs/e5_base_flat.yaml --benchmark fever --split test
+
+# 4. дообучение (итерация 2)
+python scripts/train/mine_negatives.py --config configs/e5_base_flat.yaml
+python scripts/train/train.py --config configs/e5_base_ft.yaml
+python scripts/index/build_index.py --config configs/e5_base_ft.yaml --model-path models/e5_base_ft
+
+# 5. все замеры одной командой
+python scripts/bench/benchmark_all.py --with-bm25
 ```
 
-Артефакты ключуются именем конфига: индекс → `data/index/<name>/`, метрики → `data/quality/<name>/<benchmark>/report.json`. Сравнительная таблица итераций собирается из этих `report.json`.
+`benchmark_all.py` пишет `data/analysis/RESULTS.md` (таблицы) и `benchmark_all.json` (сырые числа), чтобы любую цифру из презентации можно было проследить до прогона, который её произвёл.
 
-## Конфиг
+## Результаты
 
-```yaml
-name: bge_small_flat          # имя = ключ артефактов
-model:
-  name: BAAI/bge-small-en-v1.5
-  batch_size: 64
-index:
-  type: flat                  # flat | ivf (nlist/nprobe) | hnsw (hnsw_m/ef_*)
-eval:
-  top_k: 100
-  k_values: [1, 5, 10, 100]
-train:                        # только для train.py
-  base_config: bge_small_flat # индекс для майнинга hard negatives
-  epochs: 1
-  hard_negatives: 4
-```
+Таблицы — в `data/analysis/RESULTS.md`, сырые числа — в `benchmark_all.json`. Оба файла генерируются `scripts/bench/benchmark_all.py`.
 
-## Git
+Приложение обслуживает `configs/e5_base_flat.yaml` — точный поиск.
 
-В git — `src/`, `scripts/`, `configs/`, `pyproject.toml`, `README.md`, `.gitignore`. Всё под `data/**` и `models/` игнорируется и восстанавливается запуском скриптов.
+## Требования к железу
+
+**Инференс**: CPU, GPU не нужен. Разбивка по стадиям и RSS — в разделе *Serving* в `RESULTS.md`.
+
+**Сборка**: кодирование 500k пассажей и 2.26M предложений практично только на GPU. Дообучение — там же.
 
 ## Ссылки
 
 - [BeIR/fever](https://huggingface.co/datasets/BeIR/fever) · [BeIR/climate-fever](https://huggingface.co/datasets/BeIR/climate-fever)
-- [FAISS](https://github.com/facebookresearch/faiss) · [Sentence Transformers](https://www.sbert.net/)
+- [FAISS](https://github.com/facebookresearch/faiss) · [Sentence Transformers](https://www.sbert.net/) · [e5-base-v2](https://huggingface.co/intfloat/e5-base-v2)

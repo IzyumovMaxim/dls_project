@@ -18,9 +18,12 @@ def main() -> None:
     parser.add_argument("--benchmark", default="fever", choices=["fever", "climate"])
     parser.add_argument("--split", default="test")
     parser.add_argument("--model-path", default=None, help="override model, e.g. a fine-tuned checkpoint")
+    parser.add_argument("--device", default=None, help="override config device (cpu / cuda)")
     args = parser.parse_args()
 
     config = load_config(args.config)
+    if args.device:
+        config.model.device = args.device
     engine = SearchEngine(config, model_path=args.model_path)
     queries_path, qrels_path = paths.benchmark_files(args.benchmark, args.split)
     out_dir = paths.quality_dir(config.name) / args.benchmark
