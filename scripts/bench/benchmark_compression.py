@@ -65,6 +65,15 @@ def run_variant(name, emb, qvecs, pq_m, pq_nbits, rerank_depth, lat_warmup, lat_
         index.add(emb)
         search = lambda q, k: index.search(q, k)[1]
         q_all, q_one = qvecs, qvecs[:1]
+    elif name == "opq":
+        # Same code size as pq; the rotation matrix costs an extra dim x dim floats (2.4 MB).
+        if dim % pq_m != 0:
+            raise SystemExit(f"opq: dim {dim} not divisible by m={pq_m}")
+        index = faiss.index_factory(dim, f"OPQ{pq_m},PQ{pq_m}x{pq_nbits}", faiss.METRIC_INNER_PRODUCT)
+        index.train(emb)
+        index.add(emb)
+        search = lambda q, k: index.search(q, k)[1]
+        q_all, q_one = qvecs, qvecs[:1]
     else:  # binary / binary_rerank (sign bits, Hamming search)
         index = faiss.IndexBinaryFlat(dim)
         index.add(np.packbits(emb > 0, axis=1))
@@ -172,7 +181,7 @@ def main() -> None:
     print("\n## Full metrics\n")
     print(render_table(results, full, hdr))
 
-    out = index_dir / f"compression_{args.benchmark}.json"
+    out = index_dir / f"compression_{args.benchmark}_{args.split}_m{args.pq_m}.json"
     out.write_text(json.dumps({
         "config": config.name,
         "benchmark": f"{args.benchmark}/{args.split}",

@@ -39,7 +39,7 @@ TOP_K = 100
 # Every index we built, in the order the report compares them.
 INDEXES = ["e5_base_flat", "e5_base_ivf", "e5_base_ivfpq", "e5_base_hnsw", "e5_base_binary_rerank"]
 COMPRESSION_VARIANTS = ("flat", "sq8", "pq", "binary", "binary_rerank")
-SERVING_CONFIGS = ["e5_base_flat", "e5_base_binary_rerank"]
+SERVING_CONFIGS = ["e5_base_flat", "e5_base_binary_rerank", "e5_base_opq192"]
 
 BASELINE = "e5_base_flat"  # exact search: the quality ceiling everything else is measured against
 
